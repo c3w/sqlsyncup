@@ -1,0 +1,16 @@
+sqlsyncup
+http://github.com/c3w/sqlsyncup
+
+This script requires a skeleton structure as follows
+(pardon my ascii directory tree)
+BACKUP_ROOT
+          + [remote fully-qualified-host-name]
+          |                                  + [sql database]
+          |                                  + [sql database]
+          |                                  + [sql database]
+          + [additional hosts, like above    ]
+           |                                  + [sql database]
+           |                                  + [sql database]
+
+ The upshot of this is that you only need to create a directory to add it
+ to the backup list.

@@ -1,0 +1,145 @@
+#!/bin/bash
+
+###
+## FileNAME   : `sqlsyncup`
+## Requires   : `bash` `mysql`
+## http://github.com/c3w/sqlsyncup
+##
+## Author     : Chas Wareing <c3w@juicypop.net>
+##
+## Purpose    : BackUP remote SQL data
+##
+## Use With   : remote mysql servers
+
+
+###
+## NOTES
+##
+## This script requires a skeleton structure as follows
+## (pardon my ascii directory tree)
+## BACKUP_ROOT
+##           + [remote fully-qualified-host-name]
+##           |                                  + [sql database]
+##           |                                  + [sql database]
+##           |                                  + [sql database]
+##           + [additional hosts, like above    ]
+##           |                                  + [sql database]
+##           |                                  + [sql database]
+##
+## The upshot of this is that you only need to create a directory to add it
+## to the backup list.
+
+
+###
+## Initialization
+## (modify as needed)
+## (directories should have training slashes)
+##
+umask 066
+TMP_DIR="/data/tmp"
+BACKUP_ROOT=/data/syncup/sqlservers/
+SQL_USER=syncup
+DATE_YMD=$(date +"%Y%m%d")
+DAY=$(date +"%a")
+WEEKLY="Sun"
+
+if [ ! -d "${BACKUP_ROOT}" ]; then { mkdir -p "${BACKUP_ROOT}"; }; fi
+if [ ! -d "${TMP_DIR}" ]; then { mkdir -p "${TMP_DIR}"; }; fi
+
+###
+## Verify Local Directory
+##
+function verifyDir {
+echo Verifying $BACKUP_ROOT$1
+if [ ! -d $BACKUP_ROOT$1 ]; then
+	echo $BACKUP_ROOT$1 not found.  Read sqlsyncup script for details
+	exit
+#	return 1
+else
+	echo Directory seems to be in order.  Congratulations
+	return 0
+fi
+}
+
+###
+## Start BACKUP
+##
+function hostBackup { ## check structure & Initiate backup
+echo Locally Syncing SQL Host :: $1
+echo "" >> /tmp/sqlsyncup.log
+echo "/////////////////////" >> /tmp/sqlsyncup.log
+echo "[ $1 ]" >> /tmp/sqlsyncup.log
+pushd $BACKUP_ROOT$1
+for dbname in *
+        do
+        {
+	if [ -d $dbname ]; then
+#	echo \#\#\#
+#	echo \#\# BACKING UP $1::$dbname
+#	echo \#\#
+		cd $dbname
+		mysqldump -R --single-transaction --add-drop-table --user=${SQL_USER} --password=$(cat /www/syncup/etc/$1_sqlpwd) \
+			--host=${1} ${dbname} \
+			2>../$dbname.err \
+			| gzip > ${dbname}.sql.${DAY}.gz
+		if [ ${DAY} == ${WEEKLY} ]; then {
+		# put your weekly requirements here - maybe S3 push?
+			if [ ! -d weekly ]; then { mkdir weekly; }; fi; cp ${dbname}.sql.${DATE_YMD}.gz weekly;
+		}; fi
+		cd ..
+	echo $dbname >> /tmp/sqlsyncup.log
+	fi
+        }
+done
+popd
+
+
+}
+
+###
+## SHOW OPTIONS
+##
+function showOptions { ## Display Command-Line Options and Exit
+        cat << EOF
+Usage: sqlsyncup [fully qualified hostname]
+
+Example: \`syncup disco\`
+
+EOF
+exit
+}
+
+
+###
+## RUNTIME START HERE
+##
+#if [ ! $1 ]; then showOptions; fi
+if [ $1 ]; then
+ hostlist=$@
+else
+ pushd ${BACKUP_ROOT}
+ hostlist=$(ls)
+ popd
+fi
+
+echo "Subject: SQL Backups $(date +"%Y%m%d")" > /tmp/sqlsyncup.log
+echo "" >> /tmp/sqlsyncup.log
+echo "NSX LOG" >> /tmp/sqlsyncup.log
+echo "" >> /tmp/sqlsyncup.log
+
+pushd $BACKUP_ROOT
+for host in $hostlist
+do
+{
+if [ -d $host ]; then
+	verifyDir $host
+	if [ ! -f /${TMP_DIR}/$host\_LCK ]; then
+		hostBackup $host
+	fi
+fi
+}
+done
+popd
+#if [ verifyDir $1 ] ;  then hostBackup $1; fi
+
+#/usr/sbin/sendmail my@domain.tld < /tmp/sqlsyncup.log
